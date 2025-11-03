@@ -222,6 +222,111 @@ async function findBaseCommit(branchCommit: string): Promise<string> {
   }
 }
 
+// Generate detailed change instructions from diff
+function generateChangeInstructions(diff: string): string {
+  const lines = diff.split("\n");
+  let instructions = "";
+  let currentFile = "";
+  let fileInstructions: string[] = [];
+  let fileSummary: { file: string; operations: string[] }[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // New file detected
+    if (line.startsWith("diff --git")) {
+      // Save previous file instructions
+      if (currentFile && fileInstructions.length > 0) {
+        instructions += `\n${currentFile}\n${"=".repeat(80)}\n`;
+        instructions += fileInstructions.join("\n") + "\n";
+      }
+      
+      // Extract file name
+      const match = line.match(/diff --git a\/(.*?) b\//);
+      currentFile = match ? match[1] : "";
+      fileInstructions = [];
+      
+      // Initialize summary for this file
+      const summaryEntry = { file: currentFile, operations: [] as string[] };
+      fileSummary.push(summaryEntry);
+      
+      // Check if it's a new file
+      if (i + 1 < lines.length && lines[i + 1].includes("new file mode")) {
+        fileInstructions.push(`📄 NEW FILE: Create this file`);
+        summaryEntry.operations.push("NEW FILE");
+      }
+      // Check if it's a deleted file
+      else if (i + 1 < lines.length && lines[i + 1].includes("deleted file mode")) {
+        fileInstructions.push(`🗑️  DELETED FILE: Remove this entire file`);
+        summaryEntry.operations.push("DELETE FILE");
+      }
+    }
+    
+    // Parse hunk headers for line numbers
+    if (line.startsWith("@@")) {
+      const match = line.match(/@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@(.*)/);
+      if (match) {
+        const oldStart = parseInt(match[1]);
+        const newStart = parseInt(match[3]);
+        const newCount = match[4] ? parseInt(match[4]) : 1;
+        const context = match[5].trim();
+        
+        // Look ahead to see what changes are in this hunk
+        let addCount = 0;
+        let removeCount = 0;
+        let j = i + 1;
+        
+        while (j < lines.length && !lines[j].startsWith("@@") && !lines[j].startsWith("diff --git")) {
+          if (lines[j].startsWith("+") && !lines[j].startsWith("+++")) addCount++;
+          if (lines[j].startsWith("-") && !lines[j].startsWith("---")) removeCount++;
+          j++;
+        }
+        
+        // Find current file summary
+        const summaryEntry = fileSummary[fileSummary.length - 1];
+        
+        if (addCount > 0 && removeCount > 0) {
+          fileInstructions.push(
+            `\n📝 MODIFY at line ${newStart}${context ? ` (${context})` : ""}` +
+            `\n   - Remove ${removeCount} line(s)` +
+            `\n   - Add ${addCount} line(s)`
+          );
+          summaryEntry.operations.push(`MODIFY line ${newStart}`);
+        } else if (addCount > 0) {
+          fileInstructions.push(
+            `\n➕ INSERT at line ${newStart}${context ? ` (${context})` : ""}` +
+            `\n   - Add ${addCount} line(s)`
+          );
+          summaryEntry.operations.push(`INSERT line ${newStart}`);
+        } else if (removeCount > 0) {
+          fileInstructions.push(
+            `\n➖ DELETE from line ${oldStart}${context ? ` (${context})` : ""}` +
+            `\n   - Remove ${removeCount} line(s)`
+          );
+          summaryEntry.operations.push(`DELETE line ${oldStart}`);
+        }
+      }
+    }
+  }
+  
+  // Save last file instructions
+  if (currentFile && fileInstructions.length > 0) {
+    instructions += `\n${currentFile}\n${"=".repeat(80)}\n`;
+    instructions += fileInstructions.join("\n") + "\n";
+  }
+  
+  // Build summary at the beginning
+  let summary = "SUMMARY:\n" + "=".repeat(80) + "\n";
+  summary += `Total files modified: ${fileSummary.length}\n\n`;
+  
+  fileSummary.forEach((entry, index) => {
+    summary += `${index + 1}. ${entry.file}\n`;
+    summary += `   Operations: ${entry.operations.length > 0 ? entry.operations.join(", ") : "No changes"}\n\n`;
+  });
+  
+  return summary + "\nDETAILED INSTRUCTIONS:\n" + "=".repeat(80) + instructions;
+}
+
 // Extract complete diff with metadata
 async function extractPatch(branchName: string, branchRef: string, branchCommit: string): Promise<string> {
   try {
@@ -282,6 +387,10 @@ async function extractPatch(branchName: string, branchRef: string, branchCommit:
     // Get stats about changes
     const stats = await $`git -C ${TEMP_DIR} diff --stat ${baseCommit}..${branchRef}`.text();
     
+    // Generate change instructions
+    info("Generating change instructions...");
+    const instructions = generateChangeInstructions(diff);
+    
     // Compose complete patch file
     const patchContent = `Branch: ${branchName}
 Repository: ${REPO_URL}
@@ -303,7 +412,13 @@ STATISTICS
 ${stats}
 
 ================================================================================
-DIFF
+CHANGE INSTRUCTIONS
+================================================================================
+
+${instructions}
+
+================================================================================
+COMPLETE DIFF
 ================================================================================
 
 ${diff}`;
