@@ -1,0 +1,17 @@
+{
+  "name": "branch-transition-tool",
+  "version": "1.0.0",
+  "description": "Tool per estrarre modifiche da branch Git con supporto per branch attivi e cancellati",
+  "type": "module",
+  "scripts": {
+    "extract": "bun run extract-branch-changes.ts"
+  },
+  "keywords": ["git", "patch", "branch", "diff"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "bun-types": "latest"
+  }
+}
+

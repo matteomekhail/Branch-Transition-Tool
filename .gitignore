@@ -1,0 +1,25 @@
+# File temporanei
+.git-temp-clone/
+
+# Patch files generati
+*.patch
+
+# Bun
+node_modules/
+bun.lockb
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
