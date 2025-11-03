@@ -327,6 +327,43 @@ function generateChangeInstructions(diff: string): string {
   return summary + "\nDETAILED INSTRUCTIONS:\n" + "=".repeat(80) + instructions;
 }
 
+// Format diff with line numbers for better readability
+function formatDiffWithLineNumbers(diff: string): string {
+  const lines = diff.split("\n");
+  let formatted = "";
+  let currentFile = "";
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // File header
+    if (line.startsWith("diff --git")) {
+      const match = line.match(/diff --git a\/(.*?) b\//);
+      currentFile = match ? match[1] : "";
+      formatted += "\n" + line + "\n";
+      continue;
+    }
+    
+    // Parse hunk headers to show line numbers
+    if (line.startsWith("@@")) {
+      const match = line.match(/@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@(.*)/);
+      if (match) {
+        const oldStart = parseInt(match[1]);
+        const newStart = parseInt(match[3]);
+        const context = match[5].trim();
+        
+        formatted += `\n(Line: ${newStart}:)${context ? ` ${context}` : ""}\n`;
+        formatted += line + "\n";
+        continue;
+      }
+    }
+    
+    formatted += line + "\n";
+  }
+  
+  return formatted.trim();
+}
+
 // Extract complete diff with metadata
 async function extractPatch(branchName: string, branchRef: string, branchCommit: string): Promise<string> {
   try {
@@ -391,6 +428,10 @@ async function extractPatch(branchName: string, branchRef: string, branchCommit:
     info("Generating change instructions...");
     const instructions = generateChangeInstructions(diff);
     
+    // Format diff with line numbers
+    info("Formatting diff with line numbers...");
+    const formattedDiff = formatDiffWithLineNumbers(diff);
+    
     // Compose complete patch file
     const patchContent = `Branch: ${branchName}
 Repository: ${REPO_URL}
@@ -421,7 +462,7 @@ ${instructions}
 COMPLETE DIFF
 ================================================================================
 
-${diff}`;
+${formattedDiff}`;
     
     return patchContent;
   } catch (e: any) {
